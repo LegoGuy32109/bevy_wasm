@@ -1,7 +1,7 @@
 use bevy::app::PluginGroupBuilder;
 use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
-use bevy::sprite_render::{TileData, TilemapChunk, TilemapChunkTileData};
+use bevy::sprite_render::{AlphaMode2d, TileData, TilemapChunk, TilemapChunkTileData};
 
 const DISTANCE: f32 = 32.;
 
@@ -9,6 +9,7 @@ fn main() {
     App::new()
         .add_plugins(define_plugins())
         .add_systems(Startup, setup)
+        .add_systems(Update, update_tileset_image)
         .add_systems(FixedUpdate, keyboard_movement)
         .run();
 }
@@ -34,6 +35,20 @@ fn define_plugins() -> PluginGroupBuilder {
         })
 }
 
+fn update_tileset_image(
+    chunk_query: Single<&TilemapChunk>,
+    mut events: MessageReader<AssetEvent<Image>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    let chunk = *chunk_query;
+    for event in events.read() {
+        if event.is_loaded_with_dependencies(chunk.tileset.id()) {
+            let image = images.get_mut(&chunk.tileset).unwrap();
+            image.reinterpret_stacked_2d_as_array(4);
+        }
+    }
+}
+
 #[derive(Component)]
 struct Player;
 
@@ -50,12 +65,12 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     ));
 
     // Load rock sprite
-    let rock_texture = asset_server.load("sprites/Rock.png");
+    let rock_texture: Handle<Image> = asset_server.load("sprites/Rock.png");
 
     let chunk_size = UVec2::splat(64);
     let tile_display_size = UVec2::splat(32);
     let tile_data: Vec<Option<TileData>> = (0..chunk_size.element_product())
-        .map(|_| Some(TileData::from_tileset_index(0)))
+        .map(|_| Some(TileData::from_tileset_index(2)))
         .collect();
 
     commands.spawn((
@@ -63,7 +78,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             chunk_size,
             tile_display_size,
             tileset: rock_texture,
-            ..default()
+            alpha_mode: AlphaMode2d::Opaque,
         },
         TilemapChunkTileData(tile_data),
     ));

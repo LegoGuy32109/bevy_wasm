@@ -10,3 +10,5 @@ default_watch = false
 watch = ["src", "assets", "Cargo.toml"]
 # optional: ignore target directory if you want
 ignore = ["target", "wasm32-unknown-unknown"]
+on_change_strategy = "kill_then_restart"
+kill = ["kill", "-s", "INT"]
