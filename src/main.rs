@@ -1,33 +1,44 @@
-use bevy::camera::Viewport;
+use bevy::app::PluginGroupBuilder;
+use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
 
 const SPEED: f32 = 300.0;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
+        .add_plugins(define_plugins())
         .add_systems(Startup, setup)
         .add_systems(FixedUpdate, keyboard_movement)
         .run();
 }
 
-#[derive(Component)]
-struct Player;
-
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>, window: Single<&Window>) {
-    // Camera
-    let window_size = window.resolution.physical_size().as_vec2();
-    commands.spawn((
-        Camera2d,
-        Camera {
-            viewport: Some(Viewport {
-                physical_position: (window_size * 0.125).as_uvec2(),
-                physical_size: (window_size * 0.9).as_uvec2(),
+fn define_plugins() -> PluginGroupBuilder {
+    DefaultPlugins
+        .set(ImagePlugin::default_nearest())
+        .set(WindowPlugin {
+            primary_window: Some(Window {
+                // fill entire browser window
+                fit_canvas_to_parent: true,
+                // don't hijack keyboard shortcuts
+                prevent_default_event_handling: false,
                 ..default()
             }),
             ..default()
-        },
-    ));
+        })
+        .set(AssetPlugin {
+            // server won't check for meta files won't clog with 404s
+            // if needed in future try AssetMetaCheck::Paths(...)
+            meta_check: AssetMetaCheck::Never,
+            ..default()
+        })
+}
+
+#[derive(Component)]
+struct Player;
+
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // Camera
+    commands.spawn((Camera2d, Camera::default()));
 
     // Load a sprite for the player; you must have an image at "assets/Dwarf.png"
     let dwarf_texture = asset_server.load("sprites/Dwarf.png");
