@@ -1,8 +1,9 @@
 use bevy::app::PluginGroupBuilder;
 use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
+use bevy::sprite_render::{TileData, TilemapChunk, TilemapChunkTileData};
 
-const SPEED: f32 = 300.0;
+const DISTANCE: f32 = 32.;
 
 fn main() {
     App::new()
@@ -47,33 +48,52 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         Transform::from_xyz(1., 1., 1.),
         Player,
     ));
+
+    // Load rock sprite
+    let rock_texture = asset_server.load("sprites/Rock.png");
+
+    let chunk_size = UVec2::splat(64);
+    let tile_display_size = UVec2::splat(32);
+    let tile_data: Vec<Option<TileData>> = (0..chunk_size.element_product())
+        .map(|_| Some(TileData::from_tileset_index(0)))
+        .collect();
+
+    commands.spawn((
+        TilemapChunk {
+            chunk_size,
+            tile_display_size,
+            tileset: rock_texture,
+            ..default()
+        },
+        TilemapChunkTileData(tile_data),
+    ));
 }
 
 fn keyboard_movement(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut query: Query<&mut Transform, With<Player>>,
-    time: Res<Time<Fixed>>,
+    // time: Res<Time<Fixed>>,
 ) {
     for mut transform in query.iter_mut() {
         let mut dir = Vec3::ZERO;
 
-        if keyboard_input.pressed(KeyCode::KeyE) {
+        if keyboard_input.just_pressed(KeyCode::KeyE) {
             dir.y += 1.0;
         }
-        if keyboard_input.pressed(KeyCode::KeyD) {
+        if keyboard_input.just_pressed(KeyCode::KeyD) {
             dir.y -= 1.0;
         }
-        if keyboard_input.pressed(KeyCode::KeyS) {
+        if keyboard_input.just_pressed(KeyCode::KeyS) {
             dir.x -= 1.0;
         }
-        if keyboard_input.pressed(KeyCode::KeyF) {
+        if keyboard_input.just_pressed(KeyCode::KeyF) {
             dir.x += 1.0;
         }
 
         if dir != Vec3::ZERO {
             // Normalize so diagonal movement isn’t faster
             let dir = dir.normalize();
-            transform.translation += dir * SPEED * time.delta_secs();
+            transform.translation += dir * DISTANCE
         }
     }
 }
