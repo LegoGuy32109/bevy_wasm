@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bevy::app::PluginGroupBuilder;
 use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
@@ -15,7 +17,7 @@ fn main() {
     App::new()
         .add_plugins(define_plugins())
         .add_systems(Startup, setup)
-        .add_systems(Update, update_tileset_image)
+        .add_systems(Update, (update_tileset_image, consume_action))
         .add_systems(FixedUpdate, keyboard_movement)
         .run();
 }
@@ -93,13 +95,48 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     ));
 }
 
-fn keyboard_movement(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut query: Query<&mut Transform, With<Player>>,
-) {
-    for mut transform in query.iter_mut() {
-        let mut dir = Vec3::ZERO;
+#[derive(Component, Debug)]
+struct Action {
+    target_entity: Entity,
+    direction: Vec3,
+    time_started: Duration,
+    timer: Timer,
+}
 
+fn consume_action(
+    mut commands: Commands,
+    unprocessed_actions: Query<(Entity, &Action)>,
+    mut entities_with_transforms: Query<&mut Transform, With<Player>>,
+) {
+    for (action_entity, action) in &unprocessed_actions {
+        if action.timer.is_finished() {
+            info!("Finished {:?}", action);
+            commands.entity(action_entity).remove::<Action>();
+        }
+        let Ok(mut entity_transform) = entities_with_transforms.get_mut(action.target_entity)
+        else {
+            warn!("Invalid Action {:?}", action);
+            commands.entity(action_entity).remove::<Action>();
+            continue;
+        };
+
+        info!(?entity_transform);
+
+        let fraction_done = action.timer.fraction();
+        let start_transform = entity_transform.translation;
+        let end_transform = start_transform + (action.direction * f32::from(TILE_SIZE_IN_PX));
+        entity_transform.translation = Vec3::lerp(start_transform, end_transform, fraction_done);
+    }
+}
+
+fn keyboard_movement(
+    mut commands: Commands,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+    query: Query<Entity, With<Player>>,
+) {
+    for entity in query.iter() {
+        let mut dir = Vec3::ZERO;
         if keyboard_input.just_pressed(KeyCode::KeyE) {
             dir.y += 1.0;
         }
@@ -114,9 +151,36 @@ fn keyboard_movement(
         }
 
         if dir != Vec3::ZERO {
-            // Normalize so diagonal movement isn’t faster
-            let dir = dir.normalize();
-            transform.translation += dir * f32::from(TILE_SIZE_IN_PX);
+            commands.spawn(Action {
+                target_entity: entity,
+                direction: dir,
+                time_started: time.elapsed(),
+                timer: Timer::new(Duration::from_secs(1), TimerMode::Once),
+            });
         }
     }
+
+    // for mut transform in query.iter_mut() {
+    //     info!(?transform);
+    //     let mut dir = Vec3::ZERO;
+    //
+    //     if keyboard_input.just_pressed(KeyCode::KeyE) {
+    //         dir.y += 1.0;
+    //     }
+    //     if keyboard_input.just_pressed(KeyCode::KeyD) {
+    //         dir.y -= 1.0;
+    //     }
+    //     if keyboard_input.just_pressed(KeyCode::KeyS) {
+    //         dir.x -= 1.0;
+    //     }
+    //     if keyboard_input.just_pressed(KeyCode::KeyF) {
+    //         dir.x += 1.0;
+    //     }
+    //
+    //     if dir != Vec3::ZERO {
+    //         // Normalize so diagonal movement isn’t faster
+    //         let dir = dir.normalize();
+    //         transform.translation += dir * f32::from(TILE_SIZE_IN_PX);
+    //     }
+    // }
 }
