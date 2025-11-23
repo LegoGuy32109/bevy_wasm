@@ -2,6 +2,8 @@ use bevy::app::PluginGroupBuilder;
 use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
 use bevy::sprite_render::{AlphaMode2d, TileData, TilemapChunk, TilemapChunkTileData};
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 
 const TILE_SIZE_IN_PX: u16 = 32;
 
@@ -73,8 +75,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     let chunk_size = UVec2::splat(16);
     let tile_display_size = UVec2::splat(TILE_SIZE_IN_PX.into());
+
+    // Determine data for tile map
+    let mut rng = ChaCha8Rng::seed_from_u64(42);
     let tile_data: Vec<Option<TileData>> = (0..chunk_size.element_product())
-        .map(|_| Some(TileData::from_tileset_index(2)))
+        .map(|_| Some(TileData::from_tileset_index(rng.random_range(1..=6))))
         .collect();
 
     commands.spawn((
