@@ -3,7 +3,11 @@ use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
 use bevy::sprite_render::{AlphaMode2d, TileData, TilemapChunk, TilemapChunkTileData};
 
-const DISTANCE: f32 = 32.;
+const TILE_SIZE_IN_PX: u16 = 32;
+
+const TILE_MAP_PATH: &str = "sprites/StackedTextures.png";
+// WARN: CANNOT BE A MULTIPLE OF 6
+const NUM_TILES_IN_MAP: u16 = 31;
 
 fn main() {
     App::new()
@@ -44,7 +48,7 @@ fn update_tileset_image(
     for event in events.read() {
         if event.is_loaded_with_dependencies(chunk.tileset.id()) {
             let image = images.get_mut(&chunk.tileset).unwrap();
-            image.reinterpret_stacked_2d_as_array(4);
+            image.reinterpret_stacked_2d_as_array(NUM_TILES_IN_MAP.into());
         }
     }
 }
@@ -64,11 +68,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         Player,
     ));
 
-    // Load rock sprite
-    let rock_texture: Handle<Image> = asset_server.load("sprites/Rock.png");
+    // Load textures for tile map
+    let tile_textures: Handle<Image> = asset_server.load(TILE_MAP_PATH);
 
-    let chunk_size = UVec2::splat(64);
-    let tile_display_size = UVec2::splat(32);
+    let chunk_size = UVec2::splat(16);
+    let tile_display_size = UVec2::splat(TILE_SIZE_IN_PX.into());
     let tile_data: Vec<Option<TileData>> = (0..chunk_size.element_product())
         .map(|_| Some(TileData::from_tileset_index(2)))
         .collect();
@@ -77,7 +81,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         TilemapChunk {
             chunk_size,
             tile_display_size,
-            tileset: rock_texture,
+            tileset: tile_textures,
             alpha_mode: AlphaMode2d::Opaque,
         },
         TilemapChunkTileData(tile_data),
@@ -87,7 +91,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 fn keyboard_movement(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut query: Query<&mut Transform, With<Player>>,
-    // time: Res<Time<Fixed>>,
 ) {
     for mut transform in query.iter_mut() {
         let mut dir = Vec3::ZERO;
@@ -108,7 +111,7 @@ fn keyboard_movement(
         if dir != Vec3::ZERO {
             // Normalize so diagonal movement isn’t faster
             let dir = dir.normalize();
-            transform.translation += dir * DISTANCE
+            transform.translation += dir * f32::from(TILE_SIZE_IN_PX);
         }
     }
 }
