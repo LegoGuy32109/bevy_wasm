@@ -1,11 +1,11 @@
-use std::time::Duration;
-
 use bevy::app::PluginGroupBuilder;
 use bevy::asset::AssetMetaCheck;
+use bevy::platform::collections::HashSet;
 use bevy::prelude::*;
 use bevy::sprite_render::{AlphaMode2d, TileData, TilemapChunk, TilemapChunkTileData};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use std::time::Duration;
 
 const TILE_SIZE_IN_PX: u16 = 32;
 
@@ -64,14 +64,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Camera
     commands.spawn((Camera2d, Camera::default()));
 
-    // Load a sprite for the player; you must have an image at "assets/Dwarf.png"
-    let dwarf_texture = asset_server.load("sprites/Dwarf.png");
-    commands.spawn((
-        Sprite::from_image(dwarf_texture),
-        Transform::from_xyz(1., 1., 1.),
-        Player,
-    ));
-
     // Load textures for tile map
     let tile_textures: Handle<Image> = asset_server.load(TILE_MAP_PATH);
 
@@ -82,17 +74,24 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     let mut rng = ChaCha8Rng::seed_from_u64(42);
     let tile_data: Vec<Option<TileData>> = (0..chunk_size.element_product())
         .map(|_| Some(TileData::from_tileset_index(rng.random_range(1..=6))))
+        // TEST: checked background with clear borders
+        .map(|_| Some(TileData::from_tileset_index(18)))
         .collect();
 
-    commands.spawn((
-        TilemapChunk {
-            chunk_size,
-            tile_display_size,
-            tileset: tile_textures,
-            alpha_mode: AlphaMode2d::Opaque,
-        },
-        TilemapChunkTileData(tile_data),
-    ));
+    let chunk_data = TilemapChunkTileData(tile_data);
+    let chunk = TilemapChunk {
+        chunk_size,
+        tile_display_size,
+        tileset: tile_textures,
+        alpha_mode: AlphaMode2d::Opaque,
+    };
+
+    // Load a sprite for the player; you must have an image at "assets/Dwarf.png"
+    let dwarf_texture = asset_server.load("sprites/Dwarf.png");
+    let player_spawn = chunk.calculate_tile_transform(UVec2::splat(7));
+
+    commands.spawn((chunk, chunk_data));
+    commands.spawn((Sprite::from_image(dwarf_texture), player_spawn, Player));
 }
 
 #[derive(Component, Debug)]
@@ -105,26 +104,40 @@ struct Action {
 
 fn consume_action(
     mut commands: Commands,
-    unprocessed_actions: Query<(Entity, &Action)>,
+    time: Res<Time>,
+    mut actions_in_progress: Query<(Entity, &mut Action)>,
     mut entities_with_transforms: Query<&mut Transform, With<Player>>,
 ) {
-    for (action_entity, action) in &unprocessed_actions {
-        if action.timer.is_finished() {
-            info!("Finished {:?}", action);
-            commands.entity(action_entity).remove::<Action>();
-        }
+    // keep track of actions in progress
+    let mut actions = HashSet::new();
+
+    for (action_entity, mut action) in actions_in_progress.iter_mut() {
+        // find moving entity's transform
         let Ok(mut entity_transform) = entities_with_transforms.get_mut(action.target_entity)
         else {
             warn!("Invalid Action {:?}", action);
             commands.entity(action_entity).remove::<Action>();
             continue;
         };
+        // if the timer is finished, the entity has completed the move action
+        if action.timer.is_finished() {
+            info!("Finished {:?}", action);
+            info!("Took {:?}", time.elapsed() - action.time_started);
+            info!("Now at {:?}", entity_transform.translation);
+            commands.entity(action_entity).remove::<Action>();
+        }
 
-        info!(?entity_transform);
+        // keep track of this action so duplicates don't occur
+        if !actions.insert(action.target_entity) {
+            warn!("Duplicate action");
+            commands.entity(action_entity).remove::<Action>();
+        }
 
+        // tick the timer (this function is updated every frame)
+        action.timer.tick(time.delta());
         let fraction_done = action.timer.fraction();
         let start_transform = entity_transform.translation;
-        let end_transform = start_transform + (action.direction * f32::from(TILE_SIZE_IN_PX));
+        let end_transform = start_transform + action.direction * 4.;
         entity_transform.translation = Vec3::lerp(start_transform, end_transform, fraction_done);
     }
 }
@@ -155,32 +168,8 @@ fn keyboard_movement(
                 target_entity: entity,
                 direction: dir,
                 time_started: time.elapsed(),
-                timer: Timer::new(Duration::from_secs(1), TimerMode::Once),
+                timer: Timer::new(Duration::from_secs_f32(0.3), TimerMode::Once),
             });
         }
     }
-
-    // for mut transform in query.iter_mut() {
-    //     info!(?transform);
-    //     let mut dir = Vec3::ZERO;
-    //
-    //     if keyboard_input.just_pressed(KeyCode::KeyE) {
-    //         dir.y += 1.0;
-    //     }
-    //     if keyboard_input.just_pressed(KeyCode::KeyD) {
-    //         dir.y -= 1.0;
-    //     }
-    //     if keyboard_input.just_pressed(KeyCode::KeyS) {
-    //         dir.x -= 1.0;
-    //     }
-    //     if keyboard_input.just_pressed(KeyCode::KeyF) {
-    //         dir.x += 1.0;
-    //     }
-    //
-    //     if dir != Vec3::ZERO {
-    //         // Normalize so diagonal movement isn’t faster
-    //         let dir = dir.normalize();
-    //         transform.translation += dir * f32::from(TILE_SIZE_IN_PX);
-    //     }
-    // }
 }
