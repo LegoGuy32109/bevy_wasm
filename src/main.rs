@@ -7,6 +7,9 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::time::Duration;
 
+mod components;
+use crate::components::map_coordinates::MapCoordinates;
+
 const TILE_SIZE_IN_PX: u16 = 32;
 
 const TILE_MAP_PATH: &str = "sprites/StackedTextures.png";
@@ -48,10 +51,11 @@ fn update_tileset_image(
     mut events: MessageReader<AssetEvent<Image>>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    let chunk = *chunk_query;
+    let tileset_image_handle = &chunk_query.tileset;
+    let image_asset_id = tileset_image_handle.id();
     for event in events.read() {
-        if event.is_loaded_with_dependencies(chunk.tileset.id()) {
-            let image = images.get_mut(&chunk.tileset).unwrap();
+        if event.is_loaded_with_dependencies(image_asset_id) {
+            let image = images.get_mut(tileset_image_handle).unwrap();
             image.reinterpret_stacked_2d_as_array(NUM_TILES_IN_MAP.into());
         }
     }
@@ -88,16 +92,22 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     // Load a sprite for the player; you must have an image at "assets/Dwarf.png"
     let dwarf_texture = asset_server.load("sprites/Dwarf.png");
-    let player_spawn = chunk.calculate_tile_transform(UVec2::splat(7));
+    let map_coordinates = MapCoordinates::from_uvec2(UVec2::splat(7));
+    let player_spawn = chunk.calculate_tile_transform(map_coordinates.as_uvec2());
 
     commands.spawn((chunk, chunk_data));
-    commands.spawn((Sprite::from_image(dwarf_texture), player_spawn, Player));
+    commands.spawn((
+        Sprite::from_image(dwarf_texture),
+        player_spawn,
+        Player,
+        map_coordinates,
+    ));
 }
 
 #[derive(Component, Debug)]
 struct Action {
     target_entity: Entity,
-    direction: Vec3,
+    direction: IVec3,
     time_started: Duration,
     timer: Timer,
 }
@@ -105,15 +115,17 @@ struct Action {
 fn consume_action(
     mut commands: Commands,
     time: Res<Time>,
+    tilemap: Single<&TilemapChunk>,
     mut actions_in_progress: Query<(Entity, &mut Action)>,
-    mut entities_with_transforms: Query<&mut Transform, With<Player>>,
+    mut entities_with_transforms: Query<(&mut Transform, &mut MapCoordinates), With<Player>>,
 ) {
     // keep track of actions in progress
     let mut actions = HashSet::new();
 
     for (action_entity, mut action) in actions_in_progress.iter_mut() {
         // find moving entity's transform
-        let Ok(mut entity_transform) = entities_with_transforms.get_mut(action.target_entity)
+        let Ok((mut entity_transform, mut map_coordinates)) =
+            entities_with_transforms.get_mut(action.target_entity)
         else {
             warn!("Invalid Action {:?}", action);
             commands.entity(action_entity).remove::<Action>();
@@ -121,7 +133,8 @@ fn consume_action(
         };
         // if the timer is finished, the entity has completed the move action
         if action.timer.is_finished() {
-            info!("Finished {:?}", action);
+            map_coordinates.add_ivec3(action.direction);
+            // info!("Finished moving to {:?}", map_coordiantes);
             info!("Took {:?}", time.elapsed() - action.time_started);
             info!("Now at {:?}", entity_transform.translation);
             commands.entity(action_entity).remove::<Action>();
@@ -136,9 +149,28 @@ fn consume_action(
         // tick the timer (this function is updated every frame)
         action.timer.tick(time.delta());
         let fraction_done = action.timer.fraction();
-        let start_transform = entity_transform.translation;
-        let end_transform = start_transform + action.direction * 4.;
-        entity_transform.translation = Vec3::lerp(start_transform, end_transform, fraction_done);
+
+        // determine where entity is, and where it's going
+        let current_tile_index = map_coordinates.as_uvec2();
+        let destination_tile_index = map_coordinates
+            .clone()
+            .add_ivec3(action.direction)
+            .as_uvec2();
+        let current_tile_transform = tilemap.calculate_tile_transform(current_tile_index);
+        let destination_tile_transform = tilemap.calculate_tile_transform(destination_tile_index);
+        info!(
+            "Coords {:?}\nCurr Index {:?}\nDest Index {:?}\nCurr Transform {:?}\n Dest Transform {:?}",
+            map_coordinates,
+            current_tile_index,
+            destination_tile_index,
+            current_tile_transform,
+            destination_tile_transform
+        );
+        entity_transform.translation = Vec3::lerp(
+            current_tile_transform.translation,
+            destination_tile_transform.translation,
+            fraction_done,
+        );
     }
 }
 
@@ -149,21 +181,21 @@ fn keyboard_movement(
     query: Query<Entity, With<Player>>,
 ) {
     for entity in query.iter() {
-        let mut dir = Vec3::ZERO;
+        let mut dir = IVec3::ZERO;
         if keyboard_input.just_pressed(KeyCode::KeyE) {
-            dir.y += 1.0;
+            dir.y += 1;
         }
         if keyboard_input.just_pressed(KeyCode::KeyD) {
-            dir.y -= 1.0;
+            dir.y += -1;
         }
         if keyboard_input.just_pressed(KeyCode::KeyS) {
-            dir.x -= 1.0;
+            dir.x += -1;
         }
         if keyboard_input.just_pressed(KeyCode::KeyF) {
-            dir.x += 1.0;
+            dir.x += 1;
         }
 
-        if dir != Vec3::ZERO {
+        if dir != IVec3::ZERO {
             commands.spawn(Action {
                 target_entity: entity,
                 direction: dir,
