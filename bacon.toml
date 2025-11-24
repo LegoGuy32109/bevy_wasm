@@ -24,3 +24,5 @@ watch = ["src", "assets", "Cargo.toml"]
 ignore = ["target", "wasm32-unknown-unknown"]
 on_change_strategy = "kill_then_restart"
 kill = ["kill", "-s", "INT"]
+# don't kill window on restart
+keep_going=true

@@ -10,7 +10,7 @@ use std::time::Duration;
 mod components;
 use crate::components::map_coordinates::MapCoordinates;
 
-const TILE_SIZE_IN_PX: u16 = 32;
+const TILE_SIZE_IN_PX: u16 = 48;
 
 const TILE_MAP_PATH: &str = "sprites/StackedTextures.png";
 // WARN: CANNOT BE A MULTIPLE OF 6
@@ -77,6 +77,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Determine data for tile map
     let mut rng = ChaCha8Rng::seed_from_u64(42);
     let tile_data: Vec<Option<TileData>> = (0..chunk_size.element_product())
+        // range of stone variations
         .map(|_| Some(TileData::from_tileset_index(rng.random_range(1..=6))))
         // TEST: checked background with clear borders
         .map(|_| Some(TileData::from_tileset_index(18)))
@@ -97,7 +98,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     commands.spawn((chunk, chunk_data));
     commands.spawn((
-        Sprite::from_image(dwarf_texture),
+        Sprite {
+            image: dwarf_texture,
+            custom_size: Some(Vec2::splat(TILE_SIZE_IN_PX.into())),
+            ..default()
+        },
         player_spawn,
         Player,
         map_coordinates,
@@ -133,11 +138,14 @@ fn consume_action(
         };
         // if the timer is finished, the entity has completed the move action
         if action.timer.is_finished() {
-            map_coordinates.add_ivec3(action.direction);
-            // info!("Finished moving to {:?}", map_coordiantes);
-            info!("Took {:?}", time.elapsed() - action.time_started);
-            info!("Now at {:?}", entity_transform.translation);
+            map_coordinates.add_direction(action.direction);
+            info!(
+                "\nMoved {:?}, Took {:?}",
+                action.direction,
+                time.elapsed() - action.time_started
+            );
             commands.entity(action_entity).remove::<Action>();
+            continue;
         }
 
         // keep track of this action so duplicates don't occur
@@ -154,18 +162,10 @@ fn consume_action(
         let current_tile_index = map_coordinates.as_uvec2();
         let destination_tile_index = map_coordinates
             .clone()
-            .add_ivec3(action.direction)
+            .add_direction(action.direction)
             .as_uvec2();
         let current_tile_transform = tilemap.calculate_tile_transform(current_tile_index);
         let destination_tile_transform = tilemap.calculate_tile_transform(destination_tile_index);
-        info!(
-            "Coords {:?}\nCurr Index {:?}\nDest Index {:?}\nCurr Transform {:?}\n Dest Transform {:?}",
-            map_coordinates,
-            current_tile_index,
-            destination_tile_index,
-            current_tile_transform,
-            destination_tile_transform
-        );
         entity_transform.translation = Vec3::lerp(
             current_tile_transform.translation,
             destination_tile_transform.translation,

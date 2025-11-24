@@ -8,8 +8,11 @@ pub struct MapCoordinates {
 }
 
 impl MapCoordinates {
-    pub fn add_ivec3(&mut self, vec: IVec3) -> &mut Self {
-        self.origin += vec;
+    /// move these coordinates along this direction
+    pub fn add_direction(&mut self, vec: IVec3) -> &mut Self {
+        // switch y value of vec, easier to align UVecs with chunk index direction, but when adding
+        // the world should be negative when going down, positive when going up the screen.
+        self.origin += IVec3::new(vec.x, vec.y * -1, vec.z);
         self
     }
 
