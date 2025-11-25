@@ -91,8 +91,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     // Load a sprite for the player; you must have an image at "assets/Dwarf.png"
     let dwarf_texture = asset_server.load("sprites/Dwarf.png");
-    let map_coordinates = MapCoordinates::from_uvec2(UVec2::splat(7));
-    let player_spawn = chunk.calculate_tile_transform(map_coordinates.as_uvec2());
+    let dwarf_coordinates = MapCoordinates::new(IVec3::ZERO, uvec3(chunk_size.x, chunk_size.y, 1));
+    let dwarf_transform = chunk.calculate_tile_transform(dwarf_coordinates.as_uvec2());
 
     commands.spawn((chunk, chunk_data));
     commands.spawn((
@@ -101,9 +101,9 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             custom_size: Some(Vec2::splat(TILE_SIZE_IN_PX.into())),
             ..default()
         },
-        player_spawn,
+        dwarf_transform,
         Player,
-        map_coordinates,
+        dwarf_coordinates,
     ));
 }
 
@@ -175,34 +175,92 @@ fn consume_action(
     }
 }
 
+#[derive(Component)]
+struct DebugText;
+
 fn keyboard_movement(
     mut commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     query: Query<Entity, With<Player>>,
+    mut maybe_debug_text: Option<Query<(Entity, &mut Text), With<DebugText>>>,
 ) {
     for entity in query.iter() {
-        let mut dir = IVec3::ZERO;
-        if keyboard_input.just_pressed(KeyCode::KeyE) {
-            dir.y += 1;
-        }
-        if keyboard_input.just_pressed(KeyCode::KeyD) {
-            dir.y += -1;
-        }
-        if keyboard_input.just_pressed(KeyCode::KeyS) {
-            dir.x += -1;
-        }
-        if keyboard_input.just_pressed(KeyCode::KeyF) {
-            dir.x += 1;
+        // toggle debug text
+        if keyboard_input.just_pressed(KeyCode::F1) {
+            info!("Pressed F1!");
+            // text is already being displayed, remove it
+            if let Some(query) = maybe_debug_text {
+                for bundle in query.iter() {
+                    info!("Killing bundle!");
+                    commands.entity(bundle.0).remove::<DebugText>();
+                }
+            // text is not being displayed, add it
+            } else {
+                info!("Spawning bundle!");
+                commands.spawn((
+                    Text::new(""),
+                    TextFont {
+                        font_size: 24.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        top: Val::Px(20.0),
+                        left: Val::Px(20.0),
+                        ..default()
+                    },
+                    DebugText,
+                ));
+            }
+            return;
         }
 
-        if dir != IVec3::ZERO {
+        let mut movement_direction = IVec3::ZERO;
+        if keyboard_input.just_pressed(KeyCode::KeyE) {
+            movement_direction.y += 1;
+        }
+        if keyboard_input.just_pressed(KeyCode::KeyD) {
+            movement_direction.y += -1;
+        }
+        if keyboard_input.just_pressed(KeyCode::KeyS) {
+            movement_direction.x += -1;
+        }
+        if keyboard_input.just_pressed(KeyCode::KeyF) {
+            movement_direction.x += 1;
+        }
+
+        if movement_direction != IVec3::ZERO {
             commands.spawn(Action {
                 target_entity: entity,
-                direction: dir,
+                direction: movement_direction,
                 time_started: time.elapsed(),
                 timer: Timer::new(Duration::from_secs_f32(0.3), TimerMode::Once),
             });
+        }
+
+        // display keyboard input if debug text is active
+        if let Some(ref mut query) = maybe_debug_text {
+            let text_result = query.single_mut();
+            let Ok((_, mut text)) = text_result else {
+                return;
+            };
+
+            let mut pressed: Vec<String> = keyboard_input
+                .get_pressed()
+                .map(|key| format!("{:?}", key))
+                .collect();
+
+            pressed.sort();
+
+            let output = if pressed.is_empty() {
+                "Pressed Keys: (none)".to_string()
+            } else {
+                format!("Pressed Keys: {}", pressed.join(", "))
+            };
+
+            text.0 = output;
         }
     }
 }
