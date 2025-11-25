@@ -79,8 +79,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     let tile_data: Vec<Option<TileData>> = (0..chunk_size.element_product())
         // range of stone variations
         .map(|_| Some(TileData::from_tileset_index(rng.random_range(1..=6))))
-        // TEST: checked background with clear borders
-        .map(|_| Some(TileData::from_tileset_index(18)))
         .collect();
 
     let chunk_data = TilemapChunkTileData(tile_data);
@@ -136,12 +134,14 @@ fn consume_action(
             commands.entity(action_entity).remove::<Action>();
             continue;
         };
+
         // if the timer is finished, the entity has completed the move action
         if action.timer.is_finished() {
             map_coordinates.add_direction(action.direction);
             info!(
-                "\nMoved {:?}, Took {:?}",
+                "\nMoved {:?}, To {:?}\nTook {:?}",
                 action.direction,
+                entity_transform.translation,
                 time.elapsed() - action.time_started
             );
             commands.entity(action_entity).remove::<Action>();
@@ -152,6 +152,7 @@ fn consume_action(
         if !actions.insert(action.target_entity) {
             warn!("Duplicate action");
             commands.entity(action_entity).remove::<Action>();
+            continue;
         }
 
         // tick the timer (this function is updated every frame)
