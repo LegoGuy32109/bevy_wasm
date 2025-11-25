@@ -229,9 +229,9 @@ fn keyboard_movement(
     let maybe_debug_text = debug_text_query.single_inner();
     if keyboard_input.just_pressed(KeyCode::F1) {
         // text is already being displayed, remove it
-        if let Ok(bundle) = maybe_debug_text {
-            info!("removing {:?}", bundle.0);
-            commands.entity(bundle.0).remove::<DebugText>();
+        if let Ok((entity, mut text)) = maybe_debug_text {
+            text.0 = "".to_string();
+            commands.entity(entity).remove::<DebugText>();
         // text is not being displayed, add it
         } else {
             commands.spawn((
