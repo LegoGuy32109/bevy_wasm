@@ -78,7 +78,21 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     let mut rng = ChaCha8Rng::seed_from_u64(42);
     let tile_data: Vec<Option<TileData>> = (0..chunk_size.element_product())
         // range of stone variations
-        .map(|_| Some(TileData::from_tileset_index(rng.random_range(1..=6))))
+        .map(|_| rng.random_range(1..=6))
+        .enumerate()
+        .map(|(i, texture_index)| {
+            if (i + 11) % 31 == 0 {
+                return Some(TileData::from_tileset_index(13));
+            } else if (i + 18) % 43 == 0 {
+                return Some(TileData::from_tileset_index(14));
+            } else if (i + 4) % 62 == 0 {
+                return Some(TileData::from_tileset_index(11));
+            } else if (i + 6) % 23 == 0 {
+                return Some(TileData::from_tileset_index(16));
+            } else {
+                return Some(TileData::from_tileset_index(texture_index));
+            }
+        })
         .collect();
 
     let chunk_data = TilemapChunkTileData(tile_data);
@@ -183,40 +197,9 @@ fn keyboard_movement(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     query: Query<Entity, With<Player>>,
-    mut maybe_debug_text: Query<(Entity, &mut Text), With<DebugText>>,
+    debug_text_query: Query<(Entity, &mut Text), With<DebugText>>,
 ) {
-    let mut maybe_debug = maybe_debug_text.single_inner();
-
     for entity in query.iter() {
-        // toggle debug text
-        if keyboard_input.just_pressed(KeyCode::F1) {
-            info!("Pressed F1!");
-            // text is already being displayed, remove it
-            if let Ok(bundle) = maybe_debug {
-                info!("Killing bundle! {:?}", query);
-                commands.entity(bundle.0).remove::<DebugText>();
-            // text is not being displayed, add it
-            } else {
-                info!("Spawning bundle!");
-                commands.spawn((
-                    Text::new(""),
-                    TextFont {
-                        font_size: 24.0,
-                        ..default()
-                    },
-                    TextColor(Color::WHITE),
-                    Node {
-                        position_type: PositionType::Absolute,
-                        top: Val::Px(20.0),
-                        left: Val::Px(20.0),
-                        ..default()
-                    },
-                    DebugText,
-                ));
-            }
-            return;
-        }
-
         let mut movement_direction = IVec3::ZERO;
         if keyboard_input.just_pressed(KeyCode::KeyE) {
             movement_direction.y += 1;
@@ -241,23 +224,63 @@ fn keyboard_movement(
         }
     }
 
+    // toggle debug text
+    let maybe_debug_text = debug_text_query.single_inner();
+    if keyboard_input.just_pressed(KeyCode::F1) {
+        // text is already being displayed, remove it
+        if let Ok(bundle) = maybe_debug_text {
+            commands.entity(bundle.0).remove::<DebugText>();
+        // text is not being displayed, add it
+        } else {
+            commands.spawn((
+                Text::new(""),
+                TextFont {
+                    font_size: 24.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(20.0),
+                    left: Val::Px(20.0),
+                    ..default()
+                },
+                DebugText,
+            ));
+        }
+        // end here, can process keys to display on next frame
+        return;
+    }
+
     // display keyboard input if debug text is active
-    if let Ok(bundle) = maybe_debug {
+    if let Ok(bundle) = maybe_debug_text {
         let mut text = bundle.1;
 
-        let mut pressed: Vec<String> = keyboard_input
-            .get_pressed()
-            .map(|key| format!("{:?}", key))
-            .collect();
+        fn format_keys<I>(label: &str, keys: I) -> String
+        where
+            I: Iterator<Item = KeyCode>,
+        {
+            let mut keys: Vec<String> = keys.map(|key| format!("{:?}", key)).collect();
+            keys.sort();
 
-        pressed.sort();
+            if keys.is_empty() {
+                format!("{label}: (none)")
+            } else {
+                format!("{label}: {}", keys.join(", "))
+            }
+        }
 
-        let pressed_output = if pressed.is_empty() {
-            "Pressed Keys: (none)".to_string()
-        } else {
-            format!("Pressed Keys: {}", pressed.join(", "))
-        };
+        let pressed_output = format_keys("Pressed Keys", keyboard_input.get_pressed().copied());
 
-        text.0 = pressed_output;
+        let just_pressed_output = format_keys(
+            "Just Pressed Keys",
+            keyboard_input.get_just_pressed().copied(),
+        );
+
+        let just_released_output = format_keys(
+            "Just Released Keys",
+            keyboard_input.get_just_released().copied(),
+        );
+        text.0 = vec![just_pressed_output, pressed_output, just_released_output].join("\n");
     }
 }
