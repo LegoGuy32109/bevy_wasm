@@ -183,18 +183,18 @@ fn keyboard_movement(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     query: Query<Entity, With<Player>>,
-    mut maybe_debug_text: Option<Query<(Entity, &mut Text), With<DebugText>>>,
+    mut maybe_debug_text: Query<(Entity, &mut Text), With<DebugText>>,
 ) {
+    let mut maybe_debug = maybe_debug_text.single_inner();
+
     for entity in query.iter() {
         // toggle debug text
         if keyboard_input.just_pressed(KeyCode::F1) {
             info!("Pressed F1!");
             // text is already being displayed, remove it
-            if let Some(query) = maybe_debug_text {
-                for bundle in query.iter() {
-                    info!("Killing bundle!");
-                    commands.entity(bundle.0).remove::<DebugText>();
-                }
+            if let Ok(bundle) = maybe_debug {
+                info!("Killing bundle! {:?}", query);
+                commands.entity(bundle.0).remove::<DebugText>();
             // text is not being displayed, add it
             } else {
                 info!("Spawning bundle!");
@@ -239,28 +239,25 @@ fn keyboard_movement(
                 timer: Timer::new(Duration::from_secs_f32(0.3), TimerMode::Once),
             });
         }
+    }
 
-        // display keyboard input if debug text is active
-        if let Some(ref mut query) = maybe_debug_text {
-            let text_result = query.single_mut();
-            let Ok((_, mut text)) = text_result else {
-                return;
-            };
+    // display keyboard input if debug text is active
+    if let Ok(bundle) = maybe_debug {
+        let mut text = bundle.1;
 
-            let mut pressed: Vec<String> = keyboard_input
-                .get_pressed()
-                .map(|key| format!("{:?}", key))
-                .collect();
+        let mut pressed: Vec<String> = keyboard_input
+            .get_pressed()
+            .map(|key| format!("{:?}", key))
+            .collect();
 
-            pressed.sort();
+        pressed.sort();
 
-            let output = if pressed.is_empty() {
-                "Pressed Keys: (none)".to_string()
-            } else {
-                format!("Pressed Keys: {}", pressed.join(", "))
-            };
+        let pressed_output = if pressed.is_empty() {
+            "Pressed Keys: (none)".to_string()
+        } else {
+            format!("Pressed Keys: {}", pressed.join(", "))
+        };
 
-            text.0 = output;
-        }
+        text.0 = pressed_output;
     }
 }
