@@ -89,9 +89,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 return Some(TileData::from_tileset_index(11));
             } else if (i + 6) % 23 == 0 {
                 return Some(TileData::from_tileset_index(16));
-            } else {
-                return Some(TileData::from_tileset_index(texture_index));
             }
+            Some(TileData::from_tileset_index(texture_index))
         })
         .collect();
 
@@ -139,7 +138,7 @@ fn consume_action(
     // keep track of actions in progress
     let mut actions = HashSet::new();
 
-    for (action_entity, mut action) in actions_in_progress.iter_mut() {
+    for (action_entity, mut action) in &mut actions_in_progress {
         // find moving entity's transform
         let Ok((mut entity_transform, mut map_coordinates)) =
             entities_with_transforms.get_mut(action.target_entity)
@@ -207,72 +206,91 @@ impl Default for MovementChord {
     }
 }
 
+fn make_movement_action(direction: IVec3, entity: Entity, time_started: Duration) -> Action {
+    let duration_time = direction.length_squared() as f32 * 0.3;
+    Action {
+        target_entity: entity,
+        direction,
+        time_started,
+        timer: Timer::new(Duration::from_secs_f32(duration_time), TimerMode::Once),
+    }
+}
+
 fn keyboard_movement(
     mut commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     player_query: Query<Entity, With<Player>>,
     debug_text_query: Query<(Entity, &mut Text), With<DebugText>>,
-    mut movement_chord: ResMut<MovementChord>,
+    movement_chord_option: Option<ResMut<MovementChord>>,
 ) {
     let Ok(player) = player_query.single_inner() else {
-        warn_once!("Failed to find Player in world");
+        error_once!("Failed to find Player in world");
         return;
     };
 
-    let mut movement_direction = IVec3::ZERO;
-    if keyboard_input.just_pressed(KeyCode::KeyE) {
-        movement_direction.y += 1;
-    }
-    if keyboard_input.just_pressed(KeyCode::KeyD) {
-        movement_direction.y += -1;
-    }
-    if keyboard_input.just_pressed(KeyCode::KeyS) {
-        movement_direction.x += -1;
-    }
-    if keyboard_input.just_pressed(KeyCode::KeyF) {
-        movement_direction.x += 1;
-    }
+    // given some direction vector, create an action to be processed
+    // if direction isn't 0
+    let mut compute_movement_action = |direction: IVec3| 
+        // in some cases directions might cancel out, disregard if so
+        if direction != IVec3::ZERO {
+            commands.spawn(make_movement_action(direction, player, time.elapsed()));
+        };
 
-    if movement_direction != IVec3::ZERO {
-        info!("Pressed At {:?}", time.elapsed());
-        commands.spawn(Action {
-            target_entity: player,
-            direction: movement_direction,
-            time_started: time.elapsed(),
-            timer: Timer::new(Duration::from_secs_f32(0.3), TimerMode::Once),
-        });
-    }
+    let pressed_movement_keys: HashSet<KeyCode> = keyboard_input
+        .get_just_pressed()
+        .filter(|k| {
+            matches!(
+                k,
+                KeyCode::KeyE | KeyCode::KeyS | KeyCode::KeyD | KeyCode::KeyF
+            )
+        })
+        .copied()
+        .collect();
 
-    // Handle movement chord expiring with one key
-    if movement_chord.first_key.is_some() && movement_chord.timer.tick(time.delta()).is_finished() {
+    // don't need to trigger the chord, two keys indicates diagonal
+    if pressed_movement_keys.len() == 2 {
         let mut movement_direction = IVec3::ZERO;
-        match movement_chord.first_key: {
-            KeyCode::KeyE => movement_direction.y += 1,
-            _ => _,
-        }
-
-        if keyboard_input.just_pressed(KeyCode::KeyE) {
+        if pressed_movement_keys.contains(&KeyCode::KeyE) {
             movement_direction.y += 1;
         }
-        if keyboard_input.just_pressed(KeyCode::KeyD) {
+        if pressed_movement_keys.contains(&KeyCode::KeyD) {
             movement_direction.y += -1;
         }
-        if keyboard_input.just_pressed(KeyCode::KeyS) {
+        if pressed_movement_keys.contains(&KeyCode::KeyS) {
             movement_direction.x += -1;
         }
-        if keyboard_input.just_pressed(KeyCode::KeyF) {
+        if pressed_movement_keys.contains(&KeyCode::KeyF) {
             movement_direction.x += 1;
         }
 
-        if movement_direction != IVec3::ZERO {
-            info!("Pressed At {:?}", time.elapsed());
-            commands.spawn(Action {
-                target_entity: player,
-                direction: movement_direction,
-                time_started: time.elapsed(),
-                timer: Timer::new(Duration::from_secs_f32(0.3), TimerMode::Once),
-            });
+        compute_movement_action(movement_direction);
+
+        // in some cases directions might cancel out, disregard if so
+        // if movement_direction != IVec3::ZERO {
+        //     commands.spawn(movement_action_this_frame(movement_direction));
+        // }
+    }
+
+    if let Some(mut movement_chord) = movement_chord_option {
+    // Handle movement chord expiring with one key
+    if movement_chord.first_key.is_some() && movement_chord.timer.tick(time.delta()).is_finished() {
+        let mut movement_direction = IVec3::ZERO;
+        let key = movement_chord.first_key.unwrap();
+        match key {
+            KeyCode::KeyE => movement_direction.y += 1,
+            KeyCode::KeyD => movement_direction.y += -1,
+            KeyCode::KeyS => movement_direction.x += 1,
+            KeyCode::KeyF => movement_direction.x += -1,
+            // somehow movement chord was triggered by a key that isn't a direction
+            // movement_direction is not updated so nothing happens
+            _ => error!("Movement chord triggered by invalid key {key:?}"),
+        }
+
+        compute_movement_action(movement_direction);
+        // if movement_direction != IVec3::ZERO {
+        //     commands.spawn(movement_action_this_frame(movement_direction));
+        // }
         }
     }
 
@@ -281,7 +299,7 @@ fn keyboard_movement(
     if keyboard_input.just_pressed(KeyCode::F1) {
         // text is already being displayed, remove it
         if let Ok((entity, mut text)) = maybe_debug_text {
-            text.0 = "".to_string();
+            text.0 = String::new();
             commands.entity(entity).remove::<DebugText>();
         // text is not being displayed, add it
         } else {
@@ -307,13 +325,11 @@ fn keyboard_movement(
 
     // display keyboard input if debug text is active
     if let Ok(bundle) = maybe_debug_text {
-        let mut text = bundle.1;
-
         fn format_keys<I>(label: &str, keys: I) -> String
         where
             I: Iterator<Item = KeyCode>,
         {
-            let mut keys: Vec<String> = keys.map(|key| format!("{:?}", key)).collect();
+            let mut keys: Vec<String> = keys.map(|key| format!("{key:?}")).collect();
             keys.sort();
 
             if keys.is_empty() {
@@ -322,6 +338,8 @@ fn keyboard_movement(
                 format!("{label}: {}", keys.join(", "))
             }
         }
+
+        let mut text = bundle.1;
 
         let pressed_output = format_keys("Pressed Keys", keyboard_input.get_pressed().copied());
 
@@ -334,6 +352,6 @@ fn keyboard_movement(
             "Just Released Keys",
             keyboard_input.get_just_released().copied(),
         );
-        text.0 = vec![just_pressed_output, pressed_output, just_released_output].join("\n");
+        text.0 = [just_pressed_output, pressed_output, just_released_output].join("\n");
     }
 }

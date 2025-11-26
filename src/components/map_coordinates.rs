@@ -11,7 +11,7 @@ impl MapCoordinates {
     pub fn add_direction(&mut self, vec: IVec3) -> &mut Self {
         // switch y value of vec, easier to align UVecs with chunk index direction, but when adding
         // the world should be negative when going down, positive when going up the screen.
-        self.origin += IVec3::new(vec.x, vec.y * -1, vec.z);
+        self.origin += IVec3::new(vec.x, -vec.y, vec.z);
         self
     }
 
@@ -31,8 +31,8 @@ impl MapCoordinates {
 impl Clone for MapCoordinates {
     fn clone(&self) -> Self {
         Self {
-            origin: self.origin.clone(),
-            map_size: self.map_size.clone(),
+            origin: self.origin,
+            map_size: self.map_size,
         }
     }
 }
