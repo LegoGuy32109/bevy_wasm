@@ -192,15 +192,66 @@ fn consume_action(
 #[derive(Component)]
 struct DebugText;
 
+#[derive(Resource)]
+struct MovementChord {
+    first_key: Option<KeyCode>,
+    timer: Timer,
+}
+
+impl Default for MovementChord {
+    fn default() -> Self {
+        Self {
+            first_key: None,
+            timer: Timer::from_seconds(0.04, TimerMode::Once),
+        }
+    }
+}
+
 fn keyboard_movement(
     mut commands: Commands,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    query: Query<Entity, With<Player>>,
+    player_query: Query<Entity, With<Player>>,
     debug_text_query: Query<(Entity, &mut Text), With<DebugText>>,
+    mut movement_chord: ResMut<MovementChord>,
 ) {
-    for entity in query.iter() {
+    let Ok(player) = player_query.single_inner() else {
+        warn_once!("Failed to find Player in world");
+        return;
+    };
+
+    let mut movement_direction = IVec3::ZERO;
+    if keyboard_input.just_pressed(KeyCode::KeyE) {
+        movement_direction.y += 1;
+    }
+    if keyboard_input.just_pressed(KeyCode::KeyD) {
+        movement_direction.y += -1;
+    }
+    if keyboard_input.just_pressed(KeyCode::KeyS) {
+        movement_direction.x += -1;
+    }
+    if keyboard_input.just_pressed(KeyCode::KeyF) {
+        movement_direction.x += 1;
+    }
+
+    if movement_direction != IVec3::ZERO {
+        info!("Pressed At {:?}", time.elapsed());
+        commands.spawn(Action {
+            target_entity: player,
+            direction: movement_direction,
+            time_started: time.elapsed(),
+            timer: Timer::new(Duration::from_secs_f32(0.3), TimerMode::Once),
+        });
+    }
+
+    // Handle movement chord expiring with one key
+    if movement_chord.first_key.is_some() && movement_chord.timer.tick(time.delta()).is_finished() {
         let mut movement_direction = IVec3::ZERO;
+        match movement_chord.first_key: {
+            KeyCode::KeyE => movement_direction.y += 1,
+            _ => _,
+        }
+
         if keyboard_input.just_pressed(KeyCode::KeyE) {
             movement_direction.y += 1;
         }
@@ -217,7 +268,7 @@ fn keyboard_movement(
         if movement_direction != IVec3::ZERO {
             info!("Pressed At {:?}", time.elapsed());
             commands.spawn(Action {
-                target_entity: entity,
+                target_entity: player,
                 direction: movement_direction,
                 time_started: time.elapsed(),
                 timer: Timer::new(Duration::from_secs_f32(0.3), TimerMode::Once),
