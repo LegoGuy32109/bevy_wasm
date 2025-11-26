@@ -197,11 +197,19 @@ struct MovementChord {
     timer: Timer,
 }
 
+impl MovementChord {
+    fn from_key(key: &KeyCode) -> Self {
+        let mut chord = MovementChord::default();
+        chord.first_key = Some(*key);
+        chord
+    }
+}
+
 impl Default for MovementChord {
     fn default() -> Self {
         Self {
             first_key: None,
-            timer: Timer::from_seconds(0.04, TimerMode::Once),
+            timer: Timer::from_seconds(0.1, TimerMode::Once),
         }
     }
 }
@@ -231,11 +239,14 @@ fn keyboard_movement(
 
     // given some direction vector, create an action to be processed
     // if direction isn't 0
-    let mut compute_movement_action = |direction: IVec3| 
+    let mut compute_movement_action = |direction: IVec3| {
         // in some cases directions might cancel out, disregard if so
         if direction != IVec3::ZERO {
+            // if there was somehow a Movement Chord still active, remove it
+            commands.remove_resource::<MovementChord>();
             commands.spawn(make_movement_action(direction, player, time.elapsed()));
-        };
+        }
+    };
 
     let pressed_movement_keys: HashSet<KeyCode> = keyboard_input
         .get_just_pressed()
@@ -248,9 +259,9 @@ fn keyboard_movement(
         .copied()
         .collect();
 
+    let mut movement_direction = IVec3::ZERO;
     // don't need to trigger the chord, two keys indicates diagonal
     if pressed_movement_keys.len() == 2 {
-        let mut movement_direction = IVec3::ZERO;
         if pressed_movement_keys.contains(&KeyCode::KeyE) {
             movement_direction.y += 1;
         }
@@ -264,33 +275,78 @@ fn keyboard_movement(
             movement_direction.x += 1;
         }
 
+        // if we're here, this is an early return of any more movement logic
         compute_movement_action(movement_direction);
+    } else {
+        if let Some(mut movement_chord) = movement_chord_option {
+            info!("movement_chord present");
+            // Handle movement chord expiring with one key
+            // if a key was pressed, it should cancel the chord
+            if movement_chord.first_key.is_some() {
+                let mut movement_direction = IVec3::ZERO;
+                let key = movement_chord.first_key.unwrap();
+                info!("Key in chord is {key:?}");
+                match key {
+                    KeyCode::KeyE => movement_direction.y += 1,
+                    KeyCode::KeyD => movement_direction.y += -1,
+                    KeyCode::KeyF => movement_direction.x += 1,
+                    KeyCode::KeyS => movement_direction.x += -1,
+                    // somehow movement chord was triggered by a key that isn't a direction
+                    // movement_direction is not updated so nothing happens
+                    _ => error!("Movement chord triggered by invalid key {key:?}"),
+                }
 
-        // in some cases directions might cancel out, disregard if so
-        // if movement_direction != IVec3::ZERO {
-        //     commands.spawn(movement_action_this_frame(movement_direction));
-        // }
-    }
+                // movement_chord ended, only one key was pressed
+                if movement_chord.timer.tick(time.delta()).is_finished() {
+                    compute_movement_action(movement_direction);
+                }
 
-    if let Some(mut movement_chord) = movement_chord_option {
-    // Handle movement chord expiring with one key
-    if movement_chord.first_key.is_some() && movement_chord.timer.tick(time.delta()).is_finished() {
-        let mut movement_direction = IVec3::ZERO;
-        let key = movement_chord.first_key.unwrap();
-        match key {
-            KeyCode::KeyE => movement_direction.y += 1,
-            KeyCode::KeyD => movement_direction.y += -1,
-            KeyCode::KeyS => movement_direction.x += 1,
-            KeyCode::KeyF => movement_direction.x += -1,
-            // somehow movement chord was triggered by a key that isn't a direction
-            // movement_direction is not updated so nothing happens
-            _ => error!("Movement chord triggered by invalid key {key:?}"),
-        }
+                // combine currently pressed keys to current chord key
+                if pressed_movement_keys.len() >= 1 {
+                    if pressed_movement_keys.contains(&KeyCode::KeyE) {
+                        movement_direction.y += 1;
+                    }
+                    if pressed_movement_keys.contains(&KeyCode::KeyD) {
+                        movement_direction.y += -1;
+                    }
+                    if pressed_movement_keys.contains(&KeyCode::KeyF) {
+                        movement_direction.x += 1;
+                    }
+                    if pressed_movement_keys.contains(&KeyCode::KeyS) {
+                        movement_direction.x += -1;
+                    }
 
-        compute_movement_action(movement_direction);
-        // if movement_direction != IVec3::ZERO {
-        //     commands.spawn(movement_action_this_frame(movement_direction));
-        // }
+                    compute_movement_action(movement_direction);
+                }
+            } else {
+                info!("movement_chord NOT present");
+                // a movement key might be pressed it might not
+                if pressed_movement_keys.contains(&KeyCode::KeyE) {
+                    movement_direction.y += 1;
+                }
+                if pressed_movement_keys.contains(&KeyCode::KeyD) {
+                    movement_direction.y += -1;
+                }
+                if pressed_movement_keys.contains(&KeyCode::KeyF) {
+                    movement_direction.x += 1;
+                }
+                if pressed_movement_keys.contains(&KeyCode::KeyS) {
+                    movement_direction.x += -1;
+                }
+
+                // if we're here, this is an early return of any more movement logic
+                compute_movement_action(movement_direction);
+            }
+        } else if pressed_movement_keys.len() >= 1 {
+            info!("pressed_movement_keys >= 1");
+            // a chord was not present, create one from the singular key pressed
+            // ok sometimes 3-4 keys could be pressed just take the sorted first
+            let mut pressed_keys: Vec<KeyCode> = pressed_movement_keys.into_iter().collect();
+            pressed_keys.sort();
+            let first_key = pressed_keys.first().unwrap();
+
+            commands.insert_resource(MovementChord::from_key(first_key));
+            info!("inserted {first_key:?}");
         }
     }
 
