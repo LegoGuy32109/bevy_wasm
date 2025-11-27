@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use bevy::sprite_render::{AlphaMode2d, TileData, TilemapChunk, TilemapChunkTileData};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use std::fmt::Write;
 use std::time::Duration;
 
 mod components;
@@ -199,14 +200,6 @@ struct MovementChord {
     timer: Timer,
 }
 
-impl MovementChord {
-    fn from_key(key: KeyCode) -> Self {
-        let mut chord = MovementChord::default();
-        chord.first_key = Some(key);
-        chord
-    }
-}
-
 impl Default for MovementChord {
     fn default() -> Self {
         Self {
@@ -290,9 +283,10 @@ fn debug_menu(
             keyboard_input.get_just_released().copied(),
         );
         text.0 = [just_pressed_output, pressed_output, just_released_output].join("\n");
+
         // chord info
         if let Some(ref movement_chord) = movement_chord_option {
-            text.0 += &format!("\nMovement Chord: {:?}", movement_chord.first_key);
+            let _ = write!(text.0, "\nMovement Chord: {:?}", movement_chord.first_key);
         }
     }
 }
@@ -338,10 +332,11 @@ fn keyboard_movement(
     let second_movement_key = movement_keys_sorted.next();
 
     // if you pressed two keys at once, overwrite whatever is in the chord
-    if first_movement_key.is_some() && second_movement_key.is_some() {
+    if let Some(first_key) = first_movement_key
+        && let Some(second_key) = second_movement_key
+    {
         spawn_movement_action(
-            get_movement_direction(first_movement_key.unwrap())
-                + get_movement_direction(second_movement_key.unwrap()),
+            get_movement_direction(first_key) + get_movement_direction(second_key),
         );
         return;
     }
@@ -354,15 +349,13 @@ fn keyboard_movement(
         };
 
         // if move key is pressed, combine with key in chord
-        if first_movement_key.is_some() {
+        if let Some(first_key) = first_movement_key {
             let chord_direction = get_movement_direction(key_in_chord);
-            let key_direction = get_movement_direction(first_movement_key.unwrap());
+            let key_direction = get_movement_direction(first_key);
             let combined_direction = chord_direction + key_direction;
             // don't duplicate distance
             // if direction cancels out, just do the latest direction
-            if chord_direction == key_direction || combined_direction == IVec3::ZERO {
-                spawn_movement_action(key_direction)
-            }
+            if chord_direction == key_direction || combined_direction == IVec3::ZERO {}
             spawn_movement_action(combined_direction);
             return;
         }
@@ -370,10 +363,11 @@ fn keyboard_movement(
         if movement_chord.timer.tick(time.delta()).is_finished() {
             spawn_movement_action(get_movement_direction(key_in_chord));
         }
-    } else {
-        if first_movement_key.is_some() {
-            commands.insert_resource(MovementChord::from_key(first_movement_key.unwrap()));
-        }
+    } else if let Some(key) = first_movement_key {
+        commands.insert_resource(MovementChord {
+            first_key: Some(key),
+            ..default()
+        });
     }
 }
 
