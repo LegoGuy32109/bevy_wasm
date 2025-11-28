@@ -1,10 +1,11 @@
 use bevy::prelude::*;
+use wasm_bindgen::prelude::*;
 
-pub mod components;
-pub mod domain;
-
+mod components;
+mod domain;
 use crate::domain::OpenDwarfPlugins;
 
-fn main() {
+#[wasm_bindgen]
+pub fn main() {
     App::new().add_plugins(OpenDwarfPlugins).run();
 }
