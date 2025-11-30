@@ -37,6 +37,7 @@ fn define_defaults() -> impl PluginGroup {
                 fit_canvas_to_parent: true,
                 // don't hijack keyboard shortcuts
                 prevent_default_event_handling: false,
+                canvas: Some("#game-canvas".to_string()),
                 ..default()
             }),
             ..default()
